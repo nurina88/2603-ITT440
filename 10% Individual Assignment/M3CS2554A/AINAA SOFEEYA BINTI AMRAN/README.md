@@ -23,81 +23,53 @@ To analyze which method performs best for this transaction processing workload
 # 3. Implementation
 ## 3.1 Source Code 
 ```ssh
-import random
-import time
-from concurrent.futures 
-import ThreadPoolExecutor
+import random, time
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool
-
-def generate_transactions(n):
-    """Generate random bank transactions"""
-    transactions = []
-    for _ in range(n):
-        action = random.choice(["deposit", "withdraw", "transfer"])
-        amount = random.randint(1, 1000)
-        transactions.append((action, amount))
-    return transactions
-
-def process_chunk(chunk):
-    """Process a chunk of transactions"""
-    balance = 0
-    deposit = withdraw = transfer = 0
-    
-    for action, amount in chunk:
-        if action == "deposit":
-            balance += amount
-            deposit += 1
-        elif action == "withdraw":
-            balance -= amount
-            withdraw += 1
+ 
+def gen(n):
+        return [(random.choice(["deposit","withdraw","transfer"]), random.randint(1,1000))>
+ 
+def proc(chunk):
+        bal = d = w = t = 0
+        for act, amt in chunk:
+            if act == "deposit": bal += amt; d += 1
+            elif act == "withdraw": bal -= amt; w += 1
+            else: bal -= amt; t += 1
+        return bal, d, w, t
+ 
+def run(trans, mode="seq"):
+        start = time.time()
+        if mode == "seq":
+            res = [proc(trans)]
+        elif mode == "con":
+            with ThreadPoolExecutor(4) as ex:
+                res = ex.map(proc, [trans[i::4] for i in range(4)])
         else:
-            balance -= amount
-            transfer += 1
-    
-    return balance, deposit, withdraw, transfer
-
-def sequential(transactions):
-    """Process sequentially"""
-    start = time.time()
-    result = process_chunk(transactions)
-    elapsed = time.time() - start
-    return result, elapsed
-
-def concurrent(transactions):
-    """Process with threading"""
-    start = time.time()
-    
-    num_workers = 4
-    chunk_size = len(transactions) // num_workers
-    chunks = [transactions[i:i+chunk_size] for i in range(0, len(transactions), chunk_size)]
-    
-    with ThreadPoolExecutor(max_workers=num_workers) as executor:
-        results = executor.map(process_chunk, chunks)
-    
-    elapsed = time.time() - start
-    return results, elapsed
-
-def parallel(transactions):
-    """Process with multiprocessing"""
-    start = time.time()
-    
-    num_workers = 4
-    chunk_size = len(transactions) // num_workers
-    chunks = [transactions[i:i+chunk_size] for i in range(0, len(transactions), chunk_size)]
-    
-    with Pool(num_workers) as pool:
-        results = pool.map(process_chunk, chunks)
-    
-    elapsed = time.time() - start
-    return results, elapsed
-
+            with Pool(4) as p:
+                res = p.map(proc, [trans[i::4] for i in range(4)])
+        return res, time.time()-start
+ 
 if __name__ == "__main__":
-    print("Bank Transaction Processing System\n")
-    
-    # Generate 100,000 transactions
-    n = 100000
-    print(f"Processing {n:,} transactions...\n")
-    transactions = generate_transactions(n)
+        trans = gen(3000000)
+        print(f"Bank Transaction Processing {len(trans):,} transactions\n")
+        res1, t1 = run(trans, "seq")
+        bal = 10000 + sum(r[0] for r in res1)
+        d = sum(r[1] for r in res1)
+        w = sum(r[2] for r in res1)
+        tr = sum(r[3] for r in res1)
+ 
+        res2, t2 = run(trans, "con")
+        res3, t3 = run(trans, "par")
+ 
+        print(f"Deposits: {d}")
+        print(f"Withdrawals: {w}")
+        print(f"Transfers: {tr}")
+        print(f"Final Balance: ${bal}\n")
+ 
+        print(f"Sequential: {t1:.4f}s")
+        print(f"Concurrent: {t2:.4f}s ({t1/t2:.2f}x)")
+        print(f"Parallel:   {t3:.4f}s ({t1/t3:.2f}x)")
 ```
     
 
@@ -112,33 +84,33 @@ if __name__ == "__main__":
 | parallel(transactions)   | Uses 4 processes to process 4 chunks                               |
 
 # 4. Output Results
-<img width="479" height="286" alt="Screenshot 2026-04-21 160042" src="https://github.com/user-attachments/assets/9b6f1449-d30f-4df2-80c2-734f788e0c14" />
+<img width="529" height="293" alt="image" src="https://github.com/user-attachments/assets/e959cd75-5763-4865-ac33-a4749df26eb5" />
 
 # 5. Performance Analysis
 ## 5.1 Results Summary
-| Processing Method        | Time (seconds) | Speedup |
-|--------------------------|----------------|---------|
-| Sequential               | 0.0147         | 1.00x   |
-| Concurrent (4 threads)   | 0.0186         | 0.79x   |
-| Parallel (4 processes)   | 0.0417         | 0.35x   |
+| Processing Method       | Time (seconds) | Speedup |
+|------------------------|----------------|---------|
+| Sequential             | 0.5479         | 1.00x   |
+| Concurrent (4 threads) | 0.6608         | 0.83x   |
+| Parallel (4 processes) | 2.0571         | 0.27x   |
 
 ---
 
 ## 5.2 Transaction Statistics
 
-| Transaction Type | Count   |
-|------------------|---------|
-| Deposits         | 33,340  |
-| Withdrawals      | 33,128  |
-| Transfers        | 33,532  |
-| **Total**        | **100,000** |
+| Transaction Type | Count      |
+|----------------|------------|
+| Deposits        | 1,001,306  |
+| Withdrawals     | 998,334    |
+| Transfers       | 1,000,360  |
+| **Total**       | **3,000,000** |
 
 ## 5.3 Analysis
-* Sequential (0.0147s): Fastest method. No overhead from thread or process creation.
+* Sequential (0.5479s): Fastest method. No overhead from thread or process creation. Simple and efficient for this workload.
 
-* Concurrent (0.0186s): 0.79x slower than sequential. Thread management overhead reduced performance.
+* Concurrent (0.6608s): 0.83x slower than sequential. Thread management and GIL contention on shared balance reduced performance.
 
-* Parallel (0.0417s): 0.35x slower than sequential. Process creation overhead was significant.
+* Parallel (2.0571s): 0.27x slower than sequential. High overhead from process creation and inter-process communication made this the slowest method despite using multiple CPU cores.
 
 # 6. Conclusion
-For processing 100,000 bank transactions, sequential processing was the fastest method. Concurrent threading was 21% slower, and parallel multiprocessing was 65% slower than sequential. The overhead of creating and managing threads and processes outweighed any potential parallelization benefits for this workload size.
+Based on the experimental results processing 3,000,000 bank transactions, sequential processing was the fastest method at 0.5479 seconds, outperforming both concurrent and parallel approaches. Concurrent processing using 4 threads was slower at 0.6608 seconds, achieving only 0.83x the speed of sequential due to thread management overhead and Global Interpreter Lock (GIL) contention on the shared balance. Parallel processing using 4 processes was the slowest at 2.0571 seconds, achieving just 0.27x the speed of sequential because the overhead of creating separate processes and performing inter-process communication (IPC) significantly degraded performance. Therefore, for workloads involving frequent updates to a shared state such as a bank balance, sequential processing is the most efficient choice in Python, while concurrency and parallelism introduce unnecessary overhead that reduces overall performance.
